@@ -11,26 +11,32 @@ local ImagenetDataset = torch.class('resnet.ImagenetDataset', M)
 
 function ImagenetDataset:__init(opt, split)
     if split=='train' then
-        --self.dir = '../dataset/ILSVRC2015/Data/CLS-LOC/train/'
-        self.dir = '../dataset/ILSVRC2015/Data/CLS-LOC/val/'
+        local f
+        if opt.trainset == 'train' then
+            self.dir = '../dataset/ILSVRC2015/Data/CLS-LOC/train/'
+            f = io.open('../dataset/ILSVRC2015/ImageSets/CLS-LOC/train_cls.txt')
+        elseif opt.trainset == 'val' then
+            self.dir = '../dataset/ILSVRC2015/Data/CLS-LOC/val/'
+            f = io.open('../dataset/ILSVRC2015/ImageSets/CLS-LOC/val.txt')
+        else
+            error('wrong option: trainset')
+        end
+        print('\tloading train data...')
+        self.imgPaths = {}
+        while true do
+            local line = f:read('*l')
+            if not line then break end
+            local imgPath = line:split(' ')[1] ..'.JPEG'
+            self.imgPaths[#self.imgPaths+1] = imgPath
+        end
+        --[[
         --local cachePath = paths.concat('../dataset/cachePath_train.t7')
         --local cachePath = paths.concat('../dataset/cachePath_val.t7')
-        --[[
         if paths.filep(cachePath) then
             print('loading train data list from cache...')
             self.imgPaths = torch.load(cachePath)
         else
         --]]
-            print('\tloading train data...')
-            self.imgPaths = {}
-            --local f = io.open('../dataset/ILSVRC2015/ImageSets/CLS-LOC/train_cls.txt')
-            local f = io.open('../dataset/ILSVRC2015/ImageSets/CLS-LOC/val.txt')
-            while true do
-                local line = f:read('*l')
-                if not line then break end
-                local imgPath = line:split(' ')[1] ..'.JPEG'
-                self.imgPaths[#self.imgPaths+1] = imgPath
-            end
             --torch.save(cachePath,self.imgPaths)
             --print('Saved trainset cache')
         --end
@@ -101,7 +107,7 @@ function ImagenetDataset:get(i)
     if self.split == 'train' then 
         local tps = self.opt.patchSize -- target patch size
         local ips = self.opt.patchSize / self.opt.scale -- input patch size
-        if w-tps+1 < 1 or h-tps+1 < 1 then return end
+        if ww-tps+1 < 1 or hh-tps+1 < 1 then return end
 
         local ix = torch.random(1, wwi-ips+1)
         local iy = torch.random(1, hhi-ips+1)
@@ -144,9 +150,9 @@ function ImagenetDataset:augment()
     if self.split == 'train' then
         return transform.Compose{
             transform.ColorJitter({
-                brightness = 0.4,
-                contrast = 0.4,
-                saturation = 0.4,
+                brightness = 0.1,
+                contrast = 0.1,
+                saturation = 0.1
             }),
             --transform.Lighting(0.1, pca.eigval, pca.eigvec),
             transform.HorizontalFlip(0.5),

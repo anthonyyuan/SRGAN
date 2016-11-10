@@ -18,7 +18,7 @@ print('loading model and criterion...')
 local model = require 'model/init'(opt)
 local criterion = require 'loss/init'(opt)
 
-print('creating data loader...')
+print('Creating data loader...')
 local trainLoader, valLoader = DataLoader.create(opt)
 local trainer = Trainer(model, criterion, opt, optimState)
 

@@ -22,6 +22,7 @@ function M.parse(arg)
     cmd:option('-defaultType', 'torch.FloatTensor', 'Default data type')
     -- Data
 	cmd:option('-dataset', 'imagenet', 'dataset for training: imagenet | coco')
+    cmd:option('-trainset', 'train', 'train set(1.2M train, 50k val): train | val')
     cmd:option('-valset', 'Set5', 'validation set: val | Set5 | Set14 | B100 | Urban100')
     cmd:option('-sigma',    3,      'Sigma used for gaussian blur before shrinking an image.')
     cmd:option('-inter',    'bicubic', 'Interpolation method used for downsizing an image: bicubic | inter_area')
