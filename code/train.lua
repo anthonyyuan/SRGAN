@@ -1,3 +1,4 @@
+local image = require 'image'
 local optim = require 'optim'
 
 local M = {}
@@ -140,9 +141,11 @@ end
 function Trainer:calcPSNR(output,target)
     local sc = self.opt.scale
 
-    local _,_,h,w = table.unpack(output:size():totable())
+    output = image.rgb2y(output:float():squeeze()):squeeze()
+    target = image.rgb2y(target:float():squeeze()):squeeze()
+    local h,w = table.unpack(output:size():totable())
 
-    local diff = output[{{},{},{sc+1,h-sc},{sc+1,w-sc}}] - target[{{},{},{sc+1,h-sc},{sc+1,w-sc}}]
+    local diff = output[{{sc+1,h-sc},{sc+1,w-sc}}] - target[{{sc+1,h-sc},{sc+1,w-sc}}]
 
     local mse = diff:pow(2):mean()
     local psnr = -10*math.log10(mse)
