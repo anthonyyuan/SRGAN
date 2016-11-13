@@ -14,13 +14,15 @@ function ImagenetDataset:__init(opt, split)
         local f
         if opt.trainset == 'train' then
             self.dir = '../dataset/ILSVRC2015/Data/CLS-LOC/train/'
-            f = io.open('../dataset/ILSVRC2015/ImageSets/CLS-LOC/train_cls.txt')
+            f = io.open('../dataset/ILSVRC2015/ImageSets/CLS-LOC/train_loc.txt')
         elseif opt.trainset == 'val' then
             self.dir = '../dataset/ILSVRC2015/Data/CLS-LOC/val/'
             f = io.open('../dataset/ILSVRC2015/ImageSets/CLS-LOC/val.txt')
         else
             error('wrong option: trainset')
         end
+        self.dirInp = paths.concat(self.dir,'small')
+
         print('\tloading train data...')
         self.imgPaths = {}
         while true do
@@ -55,7 +57,8 @@ function ImagenetDataset:__init(opt, split)
                 if #self.imgPaths == numVal then break end
             end
         else
-            self.dir = paths.concat('../dataset/',opt.valset)
+            self.dir = paths.concat('../dataset/benchmark',opt.valset)
+            self.dirInp = paths.concat('../dataset/benchmark','small',opt.valset)
             self.imgPaths = {}
             for f in paths.iterfiles(self.dir) do
                 self.imgPaths[#self.imgPaths+1] = f
@@ -68,41 +71,29 @@ function ImagenetDataset:__init(opt, split)
 end
 
 function ImagenetDataset:get(i)
+--[[
     local img = cv.imread{paths.concat(self.dir,self.imgPaths[i]), cv.IMREAD_COLOR}
-    local h,w,_ = table.unpack(img:size():totable())
-    local interpolation
-    if self.opt.inter == 'bicubic' then
-        interpolation = cv.bicubic
-    elseif self.opt.inter == 'inter_area' then
-        interpolation = cv.inter_area
-    end
-
-    --[[
-    local input,target,target_blur
-    if self.split == 'train' then
-        local tps = self.opt.patchSize -- target patch size
-        local ips = self.opt.patchSize / self.opt.scale -- input patch size
-        if w-tps+1 < 1 or h-tps+1 < 1 then return end
-
-        local x = torch.random(1, w-tps+1)
-        local y = torch.random(1, h-tps+1)
-        target = img[{{y,y+tps-1},{x,x+tps-1}}]
-        target_blur = cv.GaussianBlur{src=target, ksize={3,3}, sigmaX = 0.95}
-        input = cv.resize{target_blur, {ips,ips}, interpolation=cv.INTER_AREA}
-    elseif self.split == 'val' then
-        local hh,ww = self.opt.scale*math.floor(h/self.opt.scale), self.opt.scale*math.floor(w/self.opt.scale)
-        target = img[{{1,hh},{1,ww}}]
-        local hhi,wwi = hh/self.opt.scale, ww/self.opt.scale
-        target_blur = cv.gaussianblur{src=target, ksize={3,3}, sigmax = 0.95}
-        input = cv.resize{target_blur, {wwi,hhi}, interpolation=cv.inter_area}
-    end
-    --]]
+    img = img:permute(3,1,2):index(1,torch.LongTensor{3,2,1}):float()/255
+    local _,h,w = table.unpack(img:size():totable())
+    local inter
+    if self.opt.inter == 'bicubic' then inter = cv.bicubic
+    elseif self.opt.inter == 'inter_area' then inter = cv.inter_area end
     local hh,ww = self.opt.scale*math.floor(h/self.opt.scale), self.opt.scale*math.floor(w/self.opt.scale)
-    local target = img[{{1,hh},{1,ww}}]
+    local target = img[{{},{1,hh},{1,ww}}]
     local hhi,wwi = hh/self.opt.scale, ww/self.opt.scale
-    -- Resizing an entire image is inefficient, but it gives better quality than patch-wise computation.
     local target_blur = cv.GaussianBlur{src=target, ksize={3,3}, sigmaX = self.opt.sigma}
-    local input = cv.resize{target_blur, {wwi,hhi}, interpolation=interpolation}
+    local input = cv.resize{target_blur, {wwi,hhi}, interpolation=inter}
+--]]
+
+    local target = image.load(paths.concat(self.dir,self.imgPaths[i]))
+    if target:dim()==2 or (target:dim()==3 and target:size(1)==1) then target = target:repeatTensor(3,1,1) end
+    local _,h,w = table.unpack(target:size():totable())
+    local hh,ww = self.opt.scale*math.floor(h/self.opt.scale), self.opt.scale*math.floor(w/self.opt.scale)
+    target = target[{{},{1,hh},{1,ww}}]
+
+    local inputName = paths.concat(self.dirInp,self.imgPaths[i]):gsub('%.%w+','.png')
+    local input = image.load(inputName)
+    local hhi,wwi = hh/self.opt.scale, ww/self.opt.scale
 
     if self.split == 'train' then 
         local tps = self.opt.patchSize -- target patch size
@@ -114,12 +105,9 @@ function ImagenetDataset:get(i)
         local tx = self.opt.scale*(ix-1)+1
         local ty = self.opt.scale*(iy-1)+1
 
-        input = input[{{iy,iy+ips-1},{ix,ix+ips-1}}]
-        target = target[{{ty,ty+tps-1},{tx,tx+tps-1}}]
+        input = input[{{},{iy,iy+ips-1},{ix,ix+ips-1}}]
+        target = target[{{},{ty,ty+tps-1},{tx,tx+tps-1}}]
     end
-
-    input = input:permute(3,1,2):index(1,torch.LongTensor{3,2,1}):float()/255
-    target = target:permute(3,1,2):index(1,torch.LongTensor{3,2,1}):float()/255
 
     return {
         input = input,

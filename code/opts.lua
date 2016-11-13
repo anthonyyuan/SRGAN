@@ -22,10 +22,11 @@ function M.parse(arg)
     cmd:option('-defaultType', 'torch.FloatTensor', 'Default data type')
     -- Data
 	cmd:option('-dataset', 'imagenet', 'dataset for training: imagenet | coco')
-    cmd:option('-trainset', 'train', 'train set(1.2M train, 50k val): train | val')
+    cmd:option('-trainset', 'train', 'train set(500k train, 50k val): train | val')
     cmd:option('-valset', 'Set5', 'validation set: val | Set5 | Set14 | B100 | Urban100')
     cmd:option('-sigma',    3,      'Sigma used for gaussian blur before shrinking an image.')
     cmd:option('-inter',    'bicubic', 'Interpolation method used for downsizing an image: bicubic | inter_area')
+    cmd:option('-matlab',   'true',     'Use input image downsized by matlab function imresize() with bicubic interpolation')
     -- Training
     cmd:option('-nEpochs',       0,       'Number of total epochs to run')
     cmd:option('-epochNumber',   1,       'Manual epoch number (useful on restarts)')
@@ -77,6 +78,7 @@ function M.parse(arg)
     opt.optnet = opt.optnet=='true'
     opt.bottleneck = opt.bottleneck=='true'
     opt.normalize = opt.normalize=='true'
+    opt.matlab = opt.matlab=='true'
 
     if opt.load ~= '.' then 
         opt.save = opt.load
@@ -96,7 +98,7 @@ function M.parse(arg)
     end
 
     torch.setdefaulttensortype('torch.FloatTensor')
-    torch.setnumthreads(1)
+    --torch.setnumthreads(1)
     torch.manualSeed(opt.manualSeed)
 
     if opt.nGPU == 1 then
@@ -105,11 +107,6 @@ function M.parse(arg)
     cutorch.manualSeedAll(opt.manualSeed)
 
     if opt.nEpochs < 1 then opt.nEpochs = math.huge end
-
-    -- It is not recommended to change this option from default value ('val')
-    if opt.valset ~= 'val' then
-        opt.valset = 'benchmark/' .. opt.valset
-    end
 
     torch.setdefaulttensortype(opt.defaultType)
     if opt.nGPU > 0 then

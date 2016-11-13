@@ -46,8 +46,8 @@ function DataLoader:run()
     local threads = self.threads
     threads:synchronize()
     local size, batchSize = self.__size, self.batchSize
-    local perm = torch.randperm(size)
-    perm = torch.randperm(size)
+    --local perm = torch.randperm(size)
+    local perm = torch.range(1,size)
 
     local idx, sample = 1, nil
     local function enqueue()

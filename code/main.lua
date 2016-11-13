@@ -32,7 +32,7 @@ for epoch = startEpoch, opt.nEpochs do
     psnr[#psnr+1] = psnr_
 
     util:plot(loss,'loss')
-    util:plot(psnr,'PSNR')
+    util:plot(psnr,'PSNR (' .. opt.valset ..')')
 
     util:store(model,loss,psnr)
 end
