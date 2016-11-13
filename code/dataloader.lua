@@ -66,7 +66,7 @@ function DataLoader:run()
                             ::redo::
                             local sample = _G.dataset:get(idx_)
                             if not sample then 
-                                idx_ = idx_ + 1
+                                idx_ = torch.random(size)
                                 goto redo
                             end
 
