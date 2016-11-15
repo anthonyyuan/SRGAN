@@ -87,6 +87,7 @@ function ImagenetDataset:get(i)
 
     local target = image.load(paths.concat(self.dir,self.imgPaths[i]))
     if target:dim()==2 or (target:dim()==3 and target:size(1)==1) then target = target:repeatTensor(3,1,1) end
+    if target:size(1)~=3 then return end
     local _,h,w = table.unpack(target:size():totable())
     local hh,ww = self.opt.scale*math.floor(h/self.opt.scale), self.opt.scale*math.floor(w/self.opt.scale)
     target = target[{{},{1,hh},{1,ww}}]
@@ -109,6 +110,9 @@ function ImagenetDataset:get(i)
         target = target[{{},{ty,ty+tps-1},{tx,tx+tps-1}}]
     end
 
+    input:mul(255)
+    target:mul(255)
+    
     return {
         input = input,
         target = target

@@ -6,7 +6,7 @@ local function getModel(opt)
     local model
 
     if opt.load then
-        assert(paths.filep(paths.concat(opt.save,'model.t7')), 'Saved model not found in ' .. opt.save)
+        assert(paths.filep(paths.concat(opt.save,'model','model_latest.t7')), 'Saved model not found in ' .. opt.save)
         print('Resuming model from ' .. opt.save .. 'model.t7')
         model = torch.load(paths.concat(opt.save,'model.t7'))
     else 

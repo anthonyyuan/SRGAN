@@ -51,7 +51,7 @@ function M.parse(arg)
     cmd:option('-nChannel',     3,      'Number of input image channels: 1 or 3')
     cmd:option('-nFeat',    64,     'Number of feature maps in residual blocks in generator network')
     cmd:option('-normalize',   'false',   'Normalize pixel values to be zero mean, unit std')
-    cmd:option('-upsample',  'full',   'Upsampling method: full | bilinear')
+    cmd:option('-upsample',  'shuffle',   'Upsampling method: full | bilinear | shuffle')
     cmd:option('-filt_deconv',  3,      'filter size for deconvolution layer')
     cmd:option('-filt_recon',  17,      'filter size for reconstruction layer')
     -- Loss

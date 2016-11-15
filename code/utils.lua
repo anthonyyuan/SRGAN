@@ -29,7 +29,12 @@ function util:plot(tb,name)
 	gnuplot.plot(name, torch.Tensor(tb), '-')
 	gnuplot.grid(true)
 	gnuplot.title(name)
-	gnuplot.xlabel('iteration')
+	gnuplot.xlabel('iteration (*' .. self.opt.testEvery .. ')')
+    if tb[1] < tb[#tb] then
+        gnuplot.movelegend('right','bottom')
+    else
+        gnuplot.movelegend('right','top')
+    end
 	gnuplot.plotflush(fig)
 	gnuplot.closeall()  
 end
@@ -40,7 +45,8 @@ function util:store(model,loss,psnr)
     end
 
     model = deepCopy(model):float():clearState()
-    torch.save(paths.concat(self.save,'model.t7'),model)
+    torch.save(paths.concat(self.save,'model','model_' .. #loss .. '.t7'),model)
+    torch.save(paths.concat(self.save,'model','model_latest.t7'),model)
     torch.save(paths.concat(self.save,'loss.t7'),loss)
     torch.save(paths.concat(self.save,'psnr.t7'),psnr)
     torch.save(paths.concat(self.save,'opt.t7'),self.opt)

@@ -5,6 +5,7 @@ local function createModel(opt)
     local conv = nn.SpatialConvolution
     local relu = nn.ReLU
     local bnorm = nn.SpatialBatchNormalization
+    local shuffle = nn.PixelShuffle
 
     local function basicblock(nFeat, stride, preActivation)
         local s = nn.Sequential()
@@ -70,7 +71,7 @@ local function createModel(opt)
     if opt.bottleneck then conv_block = bottleneck end
 
     local model = nn.Sequential()
-        :add(conv(opt.nChannel,opt.nFeat, 3,3, 1,1, 1,1))
+        :add(conv(opt.nChannel,opt.nFeat, filt_recon,filt_recon, 1,1, pad_recon, pad_recon))
         :add(relu(true))
     for i=1,opt.nResBlock do
         model:add(conv_block(opt.nFeat, 1, preActivation))
@@ -81,18 +82,26 @@ local function createModel(opt)
         model:add(bnorm(opt.nFeat))
         model:add(relu(true))
     end
+
     if opt.upsample == 'full' then
         model:add(nn.SpatialFullConvolution(opt.nFeat,opt.nFeat, filt_deconv,filt_deconv, 2,2, pad_deconv,pad_deconv, 1,1))
         model:add(relu(true))
         model:add(nn.SpatialFullConvolution(opt.nFeat,opt.nFeat, filt_deconv,filt_deconv, 2,2, pad_deconv,pad_deconv, 1,1))
         model:add(relu(true))
-    -- bilinear upsampling seems not supporting GPU version yet. (nov. 7, 2016)
     elseif opt.upsample == 'bilinear' then
-        model:add(nn.SpatialUpSamplingBilinear({owidth=opt.patchSize,oheight=opt.patchSize}))
+        model:add(nn.SpatialUpSamplingBilinear({owidth=opt.patchSize/2,oheight=opt.patchSize/2}))
         model:add(conv(opt.nFeat,opt.nFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
         model:add(relu(true))
         model:add(nn.SpatialUpSamplingBilinear({owidth=opt.patchSize,oheight=opt.patchSize}))
         model:add(conv(opt.nFeat,opt.nFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
+        model:add(relu(true))
+    elseif opt.upsample == 'shuffle' then -- Shi et al., 'Real-Time Single Image and Video Super-Resolution Using an Efficient Sub-Pixel Convolutional Neural Network'
+        local upFeat = opt.nFeat * 2 * 2
+        model:add(conv(opt.nFeat,upFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
+        model:add(shuffle(2))
+        model:add(relu(true))
+        model:add(conv(opt.nFeat,upFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
+        model:add(shuffle(2))
         model:add(relu(true))
     end
 

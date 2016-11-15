@@ -85,14 +85,11 @@ end
 function Trainer:test(epoch, dataloader)
 
     local timer = torch.Timer()
-    local dataTimer = torch.Timer()
 
     local iter,avgPSNR = 0,0
 
     self.model:evaluate()
     for n, sample in dataloader:run() do
-        local dataTime = dataTimer:time().real
-
         if self.opt.nGPU > 0 then
             self:copyInputs(sample)
         end
@@ -115,11 +112,6 @@ function Trainer:test(epoch, dataloader)
         iter = iter + 1
 
         image.save(paths.concat(self.opt.save,'result',n .. '.jpg'), output:float():squeeze())
-        --print( (' Test: [%d][%d/%d]   Time: %.3f   Data: %.3f   PSNR: %.2f'):format(
-            --epoch, n, size, timer:time().real, dataTime, psnr) )
-
-        --timer:reset()
-        --dataTimer:reset()
     end
 
     self.model:training()
@@ -141,14 +133,23 @@ end
 function Trainer:calcPSNR(output,target)
     local sc = self.opt.scale
 
-    output = image.rgb2y(output:float():squeeze()):squeeze()
-    target = image.rgb2y(target:float():squeeze()):squeeze()
+    local function rgb2y(img)
+        local y = torch.Tensor(img:size(2),img:size(3)):fill(16)
+        y:add(img[1] * 65.738 / 256)
+        y:add(img[2] * 129.057 / 256)
+        y:add(img[3] * 25.064 / 256)
+        y:clamp(0,255)
+        return y
+    end
+
+    output = rgb2y(output:float():squeeze())
+    target = rgb2y(target:float():squeeze())
     local h,w = table.unpack(output:size():totable())
 
     local diff = output[{{sc+1,h-sc},{sc+1,w-sc}}] - target[{{sc+1,h-sc},{sc+1,w-sc}}]
 
     local mse = diff:pow(2):mean()
-    local psnr = -10*math.log10(mse)
+    local psnr = 10*math.log10(255*255/mse)
 
     return psnr
 end

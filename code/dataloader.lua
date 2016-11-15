@@ -73,7 +73,10 @@ function DataLoader:run()
                             sample = _G.augment(sample)
 
                             input_batch[i]:copy(sample.input)
-                            target_batch[i]:copy(sample.target)
+                            if not pcall(function() target_batch[i]:copy(sample.target) end) then
+                                print(sample.target:type())
+                                print(sample.target:size())
+                            end
                         end
                         collectgarbage()
                         return {
