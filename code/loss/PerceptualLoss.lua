@@ -9,7 +9,7 @@ function PerceptualLoss:__init(opt)
     local conv_layer = tostring(opt.vggDepth:sub(3,3))
     local conv_cnt, pool_cnt = 0,0
     local layer_cut = 0
-    local vgg_19 = torch.load('../../dataset/VGG-19_truncated.t7')
+    local vgg_19 = torch.load('../dataset/VGG-19_truncated.t7')
     for i=1,#vgg_19 do
         local layer_name = tostring(vgg_19:get(i)):lower()
         if layer_name:find('conv') then
@@ -28,12 +28,11 @@ function PerceptualLoss:__init(opt)
         local RGB2BGR = nn.SpatialConvolution(3,3,1,1):noBias()
         RGB2BGR.weight = torch.Tensor({{0,0,1},{0,1,0},{1,0,0}})
     vgg:insert(RGB2BGR,1)
-    vgg:insert(nn.MulConstant(255),2)
         local mean = torch.Tensor({103.939,116.779,123.68})
         local subMean = nn.SpatialConvolution(3,3,1,1)
         subMean.weight = torch.eye(3,3):view(3,3,1,1)
         subMean.bias = torch.Tensor(mean):mul(-1)
-    vgg:insert(subMean,3)
+    vgg:insert(subMean,2)
 
     self.vgg = vgg
     self.crit = nn.MSECriterion()

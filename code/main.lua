@@ -20,7 +20,7 @@ local criterion = require 'loss/init'(opt)
 
 print('Creating data loader...')
 local trainLoader, valLoader = DataLoader.create(opt)
-local trainer = Trainer(model, criterion, opt, optimState)
+local trainer = Trainer(model, criterion, opt)
 
 print('Train start')
 local startEpoch = load and #loss+1 or opt.epochNumber

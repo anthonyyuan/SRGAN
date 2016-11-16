@@ -21,8 +21,8 @@ function M.parse(arg)
 	cmd:option('-save',       os.date("%Y-%m-%d_%H-%M-%S"),       'subdirectory to save/log experiments in')
     cmd:option('-defaultType', 'torch.FloatTensor', 'Default data type')
     -- Data
-	cmd:option('-dataset', 'imagenet', 'dataset for training: imagenet | coco')
-    cmd:option('-trainset', 'train', 'train set(500k train, 50k val): train | val')
+	cmd:option('-dataset', 'imagenet', 'dataset for training: imagenet | coco | 91 | 291')
+    cmd:option('-trainset', 'val', 'train set(500k train, 50k val): train | val')
     cmd:option('-valset', 'Set5', 'validation set: val | Set5 | Set14 | B100 | Urban100')
     cmd:option('-sigma',    3,      'Sigma used for gaussian blur before shrinking an image.')
     cmd:option('-inter',    'bicubic', 'Interpolation method used for downsizing an image: bicubic | inter_area')
@@ -37,17 +37,23 @@ function M.parse(arg)
     cmd:option('-printEvery',   1e2,       'Print log every # iterations')
     cmd:option('-testEvery',    1e3,       'Test every # iterations')
     cmd:option('-load',         '.',     'Load saved training model, history, etc.')
+    cmd:option('-clip',         0.1,    'Gradient clipping constant(theta)')
     -- Optimization
     cmd:option('-optimMethod',  'ADAM',  'Optimization method')
     cmd:option('-lr',         1e-4, 'initial learning rate')
-	cmd:option('-weightDecay', 0, 'weight decay (SGD only)')
 	cmd:option('-momentum', 0.9, 'momentum (SGD only)')
 	cmd:option('-beta1', 0.9, 'ADAM momentum')
-	cmd:option('-type', 'cuda', 'type: float | cuda')
+    cmd:option('-weightDecay', 0, 'weight decay')
+    cmd:option('-optimMethod_d',  'ADAM',  'Optimization method')
+    cmd:option('-lr_d',     1e-4,   'initial learning rate for discriminator')
+    cmd:option('-momentum_d',0.9, 'momentum for discriminator')
+    cmd:option('-beta1_d',  0.9, 'ADAM momentum for discriminator')
+    cmd:option('-weightDecay_d', 0, 'weight decay for discriminator')
     -- Model
-    cmd:option('-netType',      'ResNet', 'Generator network architecture. Options: ResNet | preResNet')
+    cmd:option('-netType',      'ResNet', 'Generator network architecture. Options: ResNet | preResNet | VDSR')
     cmd:option('-bottleneck',   'false',  'Use bottleneck architecture')
-    cmd:option('-nResBlock',    15,     'Number of residual blocks in generator network')
+    cmd:option('-nLayer',       20,       'Number of convolution layer (for VDSR)')
+    cmd:option('-nResBlock',    15,     'Number of residual blocks in generator network (for SRResNet, SRGAN)')
     cmd:option('-nChannel',     3,      'Number of input image channels: 1 or 3')
     cmd:option('-nFeat',    64,     'Number of feature maps in residual blocks in generator network')
     cmd:option('-normalize',   'false',   'Normalize pixel values to be zero mean, unit std')
@@ -59,8 +65,8 @@ function M.parse(arg)
     cmd:option('-smoothL1', 0, 'Smooth L1 loss weight')
     cmd:option('-mse',   1,  'MSE loss weight')
     cmd:option('-perc',   0,  'VGG loss weight (perceptual loss)')
-    cmd:option('-adv',   0,  'Adversarial loss weight')
-    cmd:option('-tv',   0,  'Total variation regularization loss weight')
+    cmd:option('-adv',   0,  'Adversarial loss weight: 1e-3 in the paper')
+    cmd:option('-tv',   0,  'Total variation regularization loss weight: 2e-8 in the paper')
         -- VGG loss
     cmd:option('-vggDepth', '5-4', 'Depth of pre-trained VGG for use in perceptual loss')
         -- Adversarial loss
@@ -79,6 +85,8 @@ function M.parse(arg)
     opt.bottleneck = opt.bottleneck=='true'
     opt.normalize = opt.normalize=='true'
     opt.matlab = opt.matlab=='true'
+
+    if type(opt.dataset)=='number' then opt.dataset = tostring(opt.dataset) end
 
     if opt.load ~= '.' then 
         opt.save = opt.load
@@ -115,38 +123,38 @@ function M.parse(arg)
         opt.operateType = opt.defaultType
     end
 
-	if opt.optimMethod == 'SGD' then
-        opt.optimState = {
-            method = optim.sgd,
-			learningRate = opt.lr,
-			weightDecay = opt.weightDecay,
-			momentum = opt.momentum,
-			dampening = 0,
-			learningRateDecay = 1e-5,
-			nesterov = true
-		}
-	elseif opt.optimMethod == 'ADADELTA' then
-        opt.optimSate = {
-            method = optim.adadelta,
-			weightDecay = opt.weightDecay,
-		}
-	elseif opt.optimMethod == 'ADAM' then
-		opt.optimState = {
-            method = optim.adam,
-			learningRate = opt.lr,
-			beta1 = opt.beta1,
-			weightDecay = opt.weightDecay
-		}
-	elseif opt.optimMethod == 'RMSPROP' then
-		opt.optimState = {
-            method = optim.rmsprop,
-			learningRate = opt.lr,
-		}
-	else
-		error('unknown optimization method')
-	end  
-    
-    --print(opt)
+    opt.optimState_G = {
+        learningRate = opt.lr,
+        weightDecay = opt.weightDecay,
+        momentum = opt.momentum,
+        dampening = 0,
+        learningRateDecay = 1e-5,
+        nesterov = true,
+        beta1 = opt.beta1
+    }
+	if opt.optimMethod == 'SGD' then opt.optimState_G.method = optim.sgd
+    elseif opt.optimMethod == 'ADADELTA' then opt.optimState_G.method = optim.adadelta
+	elseif opt.optimMethod == 'ADAM' then opt.optimState_G.method = optim.adam
+	elseif opt.optimMethod == 'RMSPROP' then opt.optimState_G.method = optim.rmsprop
+	else error('unknown optimization method') end  
+
+    if opt.adv > 0 then
+        opt.optimState_D = {
+            learningRate = opt.lr_d,
+            weightDecay = opt.weightDecay_d,
+            momentum = opt.momentum_d,
+            dampening = 0,
+            learningRateDecay = 1e-5,
+            nesterov = true,
+            beta1 = opt.beta1_d
+        }
+        if opt.optimMethod_d == 'SGD' then opt.optimState_D.method = optim.sgd
+        elseif opt.optimMethod_d == 'ADADELTA' then opt.optimState_D.method = optim.adadelta
+        elseif opt.optimMethod_d == 'ADAM' then opt.optimState_D.method = optim.adam
+        elseif opt.optimMethod_d == 'RMSPROP' then opt.optimState_D.method = optim.rmsprop
+        else error('unknown optimization method') end  
+    end
+
     local opt_text = io.open(paths.concat(opt.save,'options.txt'),'a')
     opt_text:write(os.date("%Y-%m-%d_%H-%M-%S\n"))
     local function save_opt_text(key,value)

@@ -2,13 +2,13 @@ local Threads = require 'threads'
 Threads.serialization('threads.sharedserialize')
 
 local M = {}
-local DataLoader = torch.class('resnet.DataLoader', M)
+local DataLoader = torch.class('sr.DataLoader', M)
 
 function DataLoader.create(opt)
     print('loading data...')
     local loaders = {}
     for i, split in ipairs{'train', 'val'} do
-        local dataset = require('datasets/' .. opt.dataset)(opt,split)
+        local dataset = require ('data/dataset')(opt,split)
         print('\tInitializing data loader for ' .. split .. ' set...')
         loaders[i] = M.DataLoader(dataset, opt, split)
     end
@@ -18,7 +18,7 @@ end
 function DataLoader:__init(dataset, opt, split)
     local manualSeed = opt.manualSeed
     local function init()
-        require('datasets/' .. opt.dataset)
+        require 'data/dataset'
     end
     local function main(idx)
         if manualSeed ~= 0 then
@@ -36,6 +36,7 @@ function DataLoader:__init(dataset, opt, split)
     self.batchSize = opt.batchSize
     self.split = split
     self.opt = opt
+    self.area = dataset.area
 end
 
 function DataLoader:size()
@@ -51,15 +52,25 @@ function DataLoader:run()
     local idx, sample = 1, nil
     local function enqueue()
         if self.split == 'train' then
-            while idx <= size and threads:acceptsjob() do
-                local indices = perm:narrow(1, idx, math.min(batchSize, size - idx + 1))
+            --while idx <= size and threads:acceptsjob() do
+            while threads:acceptsjob() do
+                local nBatch = math.min(batchSize, size - idx + 1)
+                local indices
+                if self.opt.dataset=='91' or self.opt.dataset=='291' then
+                    indices = torch.multinomial(self.area,nBatch,true)
+                else
+                    indices = perm:narrow(1, idx, math.min(batchSize, size - idx + 1))
+                end
+                local netType = self.opt.netType
                 local patchSize,scale = self.opt.patchSize,self.opt.scale
+                local nChannel = self.opt.nChannel
                 threads:addjob(
                     function(indices)
                         local batchSize = indices:size(1)
-                        local inpSize,tarSize = patchSize/scale,patchSize
-                        local input_batch = torch.Tensor(batchSize,3,inpSize,inpSize):zero()
-                        local target_batch = torch.Tensor(batchSize,3,tarSize,tarSize):zero()
+                        local tarSize = patchSize
+                        local inpSize = netType=='VDSR' and patchSize or patchSize/scale
+                        local input_batch = torch.Tensor(batchSize,nChannel,inpSize,inpSize):zero()
+                        local target_batch = torch.Tensor(batchSize,nChannel,tarSize,tarSize):zero()
 
                         for i,idx in ipairs(indices:totable()) do
                             local idx_ = idx
@@ -91,6 +102,10 @@ function DataLoader:run()
                     indices
                 )
                 idx = idx + batchSize
+                if idx > size then
+                    idx = 1
+                    perm = torch.randperm(size)
+                end
             end
         elseif self.split == 'val' then
             while idx <= size and threads:acceptsjob() do

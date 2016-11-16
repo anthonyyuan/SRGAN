@@ -20,20 +20,45 @@ local M = {}
 local util = torch.class('util',M)
 
 function util:__init(opt)
-    self.opt = opt
-    self.save = opt.save
+    if opt then
+        self.opt = opt
+        self.save = opt.save
+    end
 end
 
 function util:plot(tb,name)
     local fig = gnuplot.pdffigure(paths.concat(self.save,name .. '.pdf'))
-	gnuplot.plot(name, torch.Tensor(tb), '-')
+    local lines = {}
+    if torch.type(tb[1]):find('Tensor') then
+        local nLine = tb[1]:size(1)
+        local value = {}
+        for i=1,nLine do 
+            value[i] = torch.Tensor(#tb)
+            for j=1,#tb do
+                value[i][j] = tb[j][i]
+            end
+            table.insert(lines, {name..' x'..tostring(i+1), value[i],'-'})
+        end
+    else
+        table.insert(lines,{name,torch.Tensor(tb),'-'})
+    end
+	--gnuplot.plot(name, torch.Tensor(tb), '-')
+    gnuplot.plot(lines)
 	gnuplot.grid(true)
 	gnuplot.title(name)
 	gnuplot.xlabel('iteration (*' .. self.opt.testEvery .. ')')
-    if tb[1] < tb[#tb] then
-        gnuplot.movelegend('right','bottom')
+    if torch.type(tb[1]):find('Tensor') then
+        if tb[1][1] < tb[#tb][1] then
+            gnuplot.movelegend('right','bottom')
+        else
+            gnuplot.movelegend('right','top')
+        end
     else
-        gnuplot.movelegend('right','top')
+        if tb[1] < tb[#tb] then
+            gnuplot.movelegend('right','bottom')
+        else
+            gnuplot.movelegend('right','top')
+        end
     end
 	gnuplot.plotflush(fig)
 	gnuplot.closeall()  
@@ -73,6 +98,33 @@ function util:load()
     end
 
     return ok, loss, psnr
+end
+
+function util:calcPSNR(output,target,scale)
+    output = output:squeeze()
+    target = target:squeeze()
+    if output:dim()==3 then
+        output = self:rgb2y(output:float())
+        target = self:rgb2y(target:float())
+    end
+
+    local h,w = table.unpack(output:size():totable())
+    local sc = scale
+    local diff = output[{{sc+1,h-sc},{sc+1,w-sc}}] - target[{{sc+1,h-sc},{sc+1,w-sc}}]
+
+    local mse = diff:float():pow(2):mean()
+    local psnr = 10*math.log10(255*255/mse)
+
+    return psnr
+end
+
+function util:rgb2y(img)
+    local y = torch.Tensor(img:size(2),img:size(3)):fill(16)
+    y:add(img[1] * 65.738 / 256)
+    y:add(img[2] * 129.057 / 256)
+    y:add(img[3] * 25.064 / 256)
+    y:clamp(16,235)
+    return y:byte()
 end
 
 return M.util

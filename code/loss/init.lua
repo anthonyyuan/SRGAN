@@ -35,9 +35,9 @@ local function getLoss(opt)
 
     -- 2. adversarial loss
     if opt.adv > 0 then
-        local adversarial_loss = nn.AdversarialLoss(opt)
-        local weights = torch.Tensor(opt.batchSize):fill(1/torch.log(2))
-        local adv_loss = nn.BCECriterion(weights) 
+        local adv_loss = nn.AdversarialLoss(opt)
+        --local weights = torch.Tensor(opt.batchSize):fill(1/torch.log(2))
+        --local adv_loss = nn.BCECriterion(weights) 
         criterion:add(adv_loss, opt.adv_weight)
     end
 
