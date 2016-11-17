@@ -31,7 +31,7 @@ function AdversarialLoss:__init(opt)
         :add(conv_block(256,256,filtsize_2,2))
         :add(conv_block(256,512,filtsize_1,1))
         :add(conv_block(512,512,filtsize_2,2))
-        :add(nn.SpatialConvolution(512,1024,ks,ks)) -- dense
+        :add(nn.SpatialConvolution(512,1024,ks,ks)) -- dense.
         :add(nn.LeakyReLU(negval,true))
         :add(nn.SpatialConvolution(1024,1,1,1)) -- dense
         :add(nn.Sigmoid())
@@ -39,7 +39,6 @@ function AdversarialLoss:__init(opt)
     self.discriminator = discriminator
     self.crit = nn.BCECriterion()
 
-    self.err = 0
     self.params, self.gradParams = self.discriminator:getParameters()
     self.feval = function() return self.err, self.gradParams end
     self.optimState = opt.optimState_D
@@ -77,23 +76,23 @@ function AdversarialLoss:updateOutput(input,target,mode)
 end
 
 function AdversarialLoss:updateGradInput(input,target)
-    self.gradOutput = self.crit:backward(self.d_output_fake,self.d_target_real)
-    self.gradInput = self.discriminator:updateGradInput(input,self.gradOutput) -- return value
+    self.gradOutput = self.crit:backward(self.d_output_fake,self.d_target_real):clone()
+    self.gradInput = self.discriminator:updateGradInput(input,self.gradOutput):clone() -- return value
 
     -- discriminator train
     self.discriminator:zeroGradParameters()
         -- fake
     self.d_target_fake = self.d_output_fake.new():resizeAs(self.d_output_fake):fill(0)
     self.err_fake = self.crit:forward(self.d_output_fake,self.d_target_fake)
-    local gradOutput_fake = self.crit:backward(self.d_output_fake,self.d_target_fake)
+    local gradOutput_fake = self.crit:backward(self.d_output_fake,self.d_target_fake):clone()
     self.discriminator:backward(input,gradOutput_fake)
         -- real
     self.d_output_real = self.discriminator:forward(target):clone()
     self.err_real = self.crit:forward(self.d_output_real,self.d_target_real)
-    local gradOutput_real = self.crit:backward(self.d_output_real,self.d_target_real)
+    local gradOutput_real = self.crit:backward(self.d_output_real,self.d_target_real):clone()
     self.discriminator:backward(target,gradOutput_real) 
 
-    print('optim D')
+    self.err = self.err_fake + self.err_real
     self.optimState.method(self.feval, self.params, self.optimState)
 
     return self.gradInput

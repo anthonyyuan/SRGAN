@@ -5,8 +5,8 @@ require 'cudnn'
 local PerceptualLoss, parent = torch.class('nn.PerceptualLoss','nn.Criterion')
 
 function PerceptualLoss:__init(opt)
-    local conv_block = tostring(opt.vggDepth:sub(1,1))
-    local conv_layer = tostring(opt.vggDepth:sub(3,3))
+    local conv_block = tonumber(opt.vggDepth:sub(1,1))
+    local conv_layer = tonumber(opt.vggDepth:sub(3,3))
     local conv_cnt, pool_cnt = 0,0
     local layer_cut = 0
     local vgg_19 = torch.load('../dataset/VGG-19_truncated.t7')
@@ -16,8 +16,9 @@ function PerceptualLoss:__init(opt)
             conv_cnt = conv_cnt + 1
         elseif layer_name:find('pool') then
             pool_cnt = pool_cnt + 1
+            conv_cnt = 0
         end
-        if pool_cnt == conv_block and conv_cnt == conv_layer then
+        if pool_cnt == conv_block-1 and conv_cnt == conv_layer then
             layer_cut = i
             break
         end
@@ -34,6 +35,26 @@ function PerceptualLoss:__init(opt)
         subMean.bias = torch.Tensor(mean):mul(-1)
     vgg:insert(subMean,2)
 
+    for i=1,#vgg do
+        vgg:get(i).accGradParameters = function(input,gradOutput,scale) return end
+    end
+--[[
+    if opt.nGPU > 1 then
+        local gpus = torch.range(1, opt.nGPU):totable()
+        local fastest, benchmark = cudnn.fastest, cudnn.benchmark
+
+        local dpt = nn.DataParallelTable(1, true, true)
+            :add(vgg, gpus)
+            :threads(function()
+                local cudnn = require 'cudnn'
+                cudnn.fastest, cudnn.benchmark = fastest, benchmark
+            end)
+        dpt.gradInput = nil
+
+        vgg = dpt:cuda()
+    end
+--]]
+
     self.vgg = vgg
     self.crit = nn.MSECriterion()
 
@@ -44,10 +65,17 @@ function PerceptualLoss:__init(opt)
         self.vgg:cuda()
         self.crit:cuda()
     end
+
+    self.opt = opt
 end
 
 function PerceptualLoss:updateOutput(input,target)
+--[[
+    self:copyInputs(input,target)
 
+    self.vgg_target = self.vgg:forward(self.target):clone()
+    self.vgg_input = self.vgg:forward(self.input):clone()
+--]]
     self.vgg_target = self.vgg:forward(target):clone()
     self.vgg_input = self.vgg:forward(input):clone()
     self.output = self.crit:forward(self.vgg_input,self.vgg_target)
@@ -58,7 +86,26 @@ end
 function PerceptualLoss:updateGradInput(input,target)
 
     self.dl_do = self.crit:backward(self.vgg_input,self.vgg_target)
-    self.gradInput = self.vgg:updateGradInput(input:clone(),self.dl_do)
+--[[
+    if self.opt.nGPU > 1 then
+        self.tmp = self.tmp or cutorch.createCudaHostTensor()
+        self.tmp:resize(self.dl_do:size()):copy(self.dl_do)
+        self.dl_do = self.tmp
+    end
+    local vgg = self.vgg
+    if torch.type(self.vgg)=='nn.DataParallelTable' then vgg = vgg:get(1) end
+    self.gradInput = vgg:updateGradInput(self.input,self.dl_do)
+--]]
+
+    self.gradInput = self.vgg:updateGradInput(input,self.dl_do)
 
     return self.gradInput
+end
+
+function PerceptualLoss:copyInputs(input,target)
+    self.input = self.input or (self.opt.nGPU == 1 and torch.CudaTensor() or cutorch.createCudaHostTensor())
+    self.target = self.target or (self.opt.nGPU == 1 and torch.CudaTensor() or cutorch.createCudaHostTensor())
+
+    self.input:resize(input:size()):copy(input)
+    self.target:resize(target:size()):copy(target)
 end

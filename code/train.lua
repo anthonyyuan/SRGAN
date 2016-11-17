@@ -19,18 +19,10 @@ function Trainer:__init(model, criterion, opt)
         local iAdvLoss = self.criterion.iAdvLoss
         self.advLoss = self.criterion.criterions[iAdvLoss] -- nn.AdversarialLoss (see 'loss/init.lua' and 'loss/AdversarialLoss.lua')
     end
-
---[[
-    self.params.G, self.gradParams.G = model:getParameters()
-    self.feval = {}
-    if opt.adv > 0 then
-        local iAdvLoss = self.criterion.iAdvLoss
-        self.advLoss = self.criterion.criterions[iAdvLoss] -- nn.AdversarialLoss (see 'loss/init.lua' and 'loss/AdversarialLoss.lua')
-        self.params.D, self.gradParams.D = self.advLoss.discriminator:getParameters()
-        self.feval.D = function() return self.errD, self.gradParams.D end
+    if opt.tv > 0 then
+        local iTVLoss = opt.adv > 0 and self.criterion.iAdvLoss + 1 or self.criterion.iAdvLoss
+        self.TVLoss = self.criterion.criterions[iTVLoss]
     end
-    self.feval.G = function() return self.errG, self.gradParams.G end
---]]
 end
 
 function Trainer:train(epoch, dataloader)
@@ -39,7 +31,7 @@ function Trainer:train(epoch, dataloader)
     local timer = torch.Timer()
     local dataTimer = torch.Timer()
     local trainTime, dataTime = 0,0
-    local iter, errG, errG_adv = 0,0,0
+    local iter, errG, errG_adv, errG_tv = 0,0,0,0
     local errD_fake, errD_real = 0,0
 
     self.model:training()
@@ -47,10 +39,9 @@ function Trainer:train(epoch, dataloader)
         dataTime = dataTime + dataTimer:time().real
 
         if self.opt.nGPU > 0 then
-            self:copyInputs(sample) -- Copy input and target to the GPU
+            self:copyInputs(sample,'train') -- Copy input and target to the GPU
         end
 
-        -- Train generator network
         self.model:zeroGradParameters()
 
         self.model:forward(self.input)
@@ -61,25 +52,15 @@ function Trainer:train(epoch, dataloader)
             self.gradParams:clamp(-self.opt.clip/self.opt.lr,self.opt.clip/self.opt.lr)
         end
         self.optimState.method(self.feval, self.params, self.optimState)
-        --self.optimState.G.method(self.feval.G, self.params.G, self.optimState.G)
---[[
-        -- Train adversarial network
-        if self.opt.adv > 0 then
-            self.advLoss.discriminator:zeroGradParameters()
-            local errD_fake = self.advLoss:accGradParameters(self.model.output,'fake')
-            local errD_real = self.advLoss:accGradParameters(self.target,'real')
-  
-            self.errD = (errD_fake + errD_real) / 2
-
-            self.optimState.D.method(self.feval.D, self.params.D, self.optimState.D)
-        end
---]]
 
         errG = errG + self.err
         if self.opt.adv > 0 then
             errG_adv = errG_adv + self.advLoss.output
             errD_fake = errD_fake + self.advLoss.err_fake
             errD_real = errD_real + self.advLoss.err_real
+        end
+        if self.opt.tv > 0 then
+            errG_tv = errG_tv + self.TVLoss.output
         end
 
         trainTime = trainTime + timer:time().real
@@ -88,12 +69,12 @@ function Trainer:train(epoch, dataloader)
 
         iter = iter + 1
         if n % self.opt.printEvery == 0 then
-            print(('[%d/%d] Time: %.3f   Data: %.3f  errG: %.6f (adv: %.6f)  '
-                .. 'errD_fake: %.6f  errD_real: %.6f')
-                :format(n,self.opt.testEvery,trainTime,dataTime,errG/iter,errG_adv/iter,
-                        errD_fake/iter, errD_real/iter))
+            print(('[%d/%d] Time: %.3f (data: %.3f),    errG: %.6f (adv: %.6f)(tv: %.6f),    errD_fake: %.6f  errD_real: %.6f')
+                :format(n,self.opt.testEvery,trainTime,dataTime,
+                    errG/iter, self.opt.adv*errG_adv/iter, self.opt.tv*errG_tv/iter,
+                    errD_fake/iter, errD_real/iter))
             if n % self.opt.testEvery ~= 0 then
-                errG, errG_adv = 0,0
+                errG, errG_adv, errG_tv = 0,0,0
                 errD_fake, errD_real = 0,0
                 trainTime, dataTime = 0,0
                 iter = 0
@@ -103,7 +84,7 @@ function Trainer:train(epoch, dataloader)
         if n % self.opt.testEvery == 0 then break end
     end
     
-    return errG/iter, errG_adv/iter
+    return errG/iter
 end
 
 function Trainer:test(epoch, dataloader)
@@ -117,9 +98,9 @@ function Trainer:test(epoch, dataloader)
             if self.opt.nGPU > 0 then
                 if self.opt.netType=='VDSR' then
                     self:copyInputs({input = sample.input[scale-1],
-                                    target = sample.target[scale-1]})
+                                    target = sample.target[scale-1]},'test')
                 else
-                    self:copyInputs(sample)
+                    self:copyInputs(sample,'test')
                 end
             end
 
@@ -134,6 +115,7 @@ function Trainer:test(epoch, dataloader)
             local model = self.model
             if torch.type(self.model)=='nn.DataParallelTable' then model = model:get(1) end
 
+            output = output:cuda()
             for i=1,#model do
                 local block = model:get(i):clone('weight','bias')
                 output = block:forward(output)
@@ -176,13 +158,17 @@ function Trainer:test(epoch, dataloader)
     return avgPSNR / iter
 end
 
-function Trainer:copyInputs(sample)
-   -- Copies the input to a CUDA tensor, if using 1 GPU, or to pinned memory, if using DataParallelTable. 
-   self.input = self.input or (self.opt.nGPU == 1 and torch.CudaTensor() or cutorch.createCudaHostTensor())
-   --self.target = self.target or (self.opt.nGPU == 1 and torch.CudaTensor() or cutorch.createCudaHostTensor())
-   self.target = self.target or torch.CudaTensor()
-   self.input:resize(sample.input:size()):copy(sample.input)
-   self.target:resize(sample.target:size()):copy(sample.target)
+function Trainer:copyInputs(sample,mode)
+    -- Copies the input to a CUDA tensor, if using 1 GPU, or to pinned memory, if using DataParallelTable. 
+    if mode=='train' then
+        self.input = self.input or (self.opt.nGPU == 1 and torch.CudaTensor() or cutorch.createCudaHostTensor())
+    elseif mode=='test' then
+        self.input = self.input or torch.CudaTensor()
+    end
+    --self.target = self.target or (self.opt.nGPU == 1 and torch.CudaTensor() or cutorch.createCudaHostTensor())
+    self.target = self.target or torch.CudaTensor()
+    self.input:resize(sample.input:size()):copy(sample.input)
+    self.target:resize(sample.target:size()):copy(sample.target)
 end
 
 --[[
