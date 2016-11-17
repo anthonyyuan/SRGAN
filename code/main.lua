@@ -5,6 +5,7 @@ require 'nn'
 require 'cutorch'
 require 'gnuplot'
 
+print('\n' .. os.date("%Y-%m-%d_%H-%M-%S") .. '\n')
 local opts = require 'opts'
 local opt = opts.parse(arg)
 

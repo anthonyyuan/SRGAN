@@ -17,7 +17,7 @@ local function deepCopy(tbl)
 end
 
 local M = {}
-local util = torch.class('util',M)
+local util = torch.class('sr.util',M)
 
 function util:__init(opt)
     if opt then
@@ -109,22 +109,22 @@ function util:calcPSNR(output,target,scale)
     end
 
     local h,w = table.unpack(output:size():totable())
-    local sc = scale
+    local sc = scale 
     local diff = output[{{sc+1,h-sc},{sc+1,w-sc}}] - target[{{sc+1,h-sc},{sc+1,w-sc}}]
 
-    local mse = diff:float():pow(2):mean()
+    local mse = diff:pow(2):mean()
     local psnr = 10*math.log10(255*255/mse)
 
     return psnr
 end
 
 function util:rgb2y(img)
-    local y = torch.Tensor(img:size(2),img:size(3)):fill(16)
+    local y = img.new():resize(img:size(2),img:size(3)):fill(16)
     y:add(img[1] * 65.738 / 256)
     y:add(img[2] * 129.057 / 256)
     y:add(img[3] * 25.064 / 256)
     y:clamp(16,235)
-    return y:byte()
+    return y
 end
 
 return M.util

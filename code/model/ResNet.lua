@@ -88,13 +88,6 @@ local function createModel(opt)
         model:add(relu(true))
         model:add(nn.SpatialFullConvolution(opt.nFeat,opt.nFeat, filt_deconv,filt_deconv, 2,2, pad_deconv,pad_deconv, 1,1))
         model:add(relu(true))
-    elseif opt.upsample == 'bilinear' then
-        model:add(nn.SpatialUpSamplingBilinear({owidth=opt.patchSize/2,oheight=opt.patchSize/2}))
-        model:add(conv(opt.nFeat,opt.nFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
-        model:add(relu(true))
-        model:add(nn.SpatialUpSamplingBilinear({owidth=opt.patchSize,oheight=opt.patchSize}))
-        model:add(conv(opt.nFeat,opt.nFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
-        model:add(relu(true))
     elseif opt.upsample == 'shuffle' then -- Shi et al., 'Real-Time Single Image and Video Super-Resolution Using an Efficient Sub-Pixel Convolutional Neural Network'
         local upFeat = opt.nFeat * 2 * 2
         model:add(conv(opt.nFeat,upFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
@@ -102,6 +95,14 @@ local function createModel(opt)
         model:add(relu(true))
         model:add(conv(opt.nFeat,upFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
         model:add(shuffle(2))
+        model:add(relu(true))
+    -- Currently it has a bug. In bilinear upsampling, owidth and oheight should be adjusted to fit input size in test time.
+    elseif opt.upsample == 'bilinear' then
+        model:add(nn.SpatialUpSamplingBilinear({owidth=opt.patchSize/2,oheight=opt.patchSize/2}))
+        model:add(conv(opt.nFeat,opt.nFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
+        model:add(relu(true))
+        model:add(nn.SpatialUpSamplingBilinear({owidth=opt.patchSize,oheight=opt.patchSize}))
+        model:add(conv(opt.nFeat,opt.nFeat,filt_deconv,filt_deconv,1,1,pad_deconv,pad_deconv))
         model:add(relu(true))
     end
 

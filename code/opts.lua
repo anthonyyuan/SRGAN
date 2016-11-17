@@ -37,7 +37,7 @@ function M.parse(arg)
     cmd:option('-printEvery',   1e2,       'Print log every # iterations')
     cmd:option('-testEvery',    1e3,       'Test every # iterations')
     cmd:option('-load',         '.',     'Load saved training model, history, etc.')
-    cmd:option('-clip',         0.1,    'Gradient clipping constant(theta)')
+    cmd:option('-clip',         -1,    'Gradient clipping constant(theta)')
     -- Optimization
     cmd:option('-optimMethod',  'ADAM',  'Optimization method')
     cmd:option('-lr',         1e-4, 'initial learning rate')

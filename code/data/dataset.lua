@@ -34,6 +34,9 @@ function dataset:__init(opt, split)
                 self.imgPaths[#self.imgPaths+1] = imgPath
             end
         elseif opt.dataset=='91' or opt.dataset=='291' then
+            self.imgTar = {}
+            self.imgInp = {}
+            if opt.netType=='VDSR' then for sc=2,4 do self.imgInp[sc] = {} end end
             self.dirTar = paths.concat('../dataset',opt.dataset)
             for file in paths.iterfiles(self.dirTar) do
                 local img = image.load(paths.concat(self.dirTar,file))
@@ -47,6 +50,16 @@ function dataset:__init(opt, split)
                 end
                 self.imgPaths[#self.imgPaths+1] = file
                 self.area[#self.area+1] = area
+                self.imgTar[#self.imgTar+1] = img
+                if opt.netType=='VDSR' then
+                    for sc=2,4 do
+                        local inp = image.load(paths.concat(self.dirTar,'big','x'..sc,file:split('%.')[1] .. '.png'))
+                        self.imgInp[sc][#self.imgInp[sc]+1] = inp
+                    end
+                else
+                    local inp = image.load(paths.concat(self.dirTar,'small',file:split('%.')[1] .. '.png'))
+                    self.imgInp[#self.imgInp+1] = inp
+                end
                 ::skip::
             end
             self.area = torch.Tensor(self.area)
@@ -109,7 +122,14 @@ function dataset:get(i)
     local input = cv.resize{target_blur, {wwi,hhi}, interpolation=inter}
 --]]
     local function get_img(scale)
-        local target = image.load(paths.concat(self.dirTar,self.imgPaths[i]))
+        local name= math.random(1,1e5)
+
+        local target
+        if self.split=='train' and (self.opt.dataset=='91' or self.opt.dataset=='291') then
+            target = self.imgTar[i]:clone()
+        else
+            target = image.load(paths.concat(self.dirTar,self.imgPaths[i]))
+        end
         if target:dim()==2 or (target:dim()==3 and target:size(1)==1) then target = target:repeatTensor(3,1,1) end
         if target:size(1)~=3 then return end
         local _,h,w = table.unpack(target:size():totable())
@@ -119,7 +139,15 @@ function dataset:get(i)
 
         if self.opt.netType=='VDSR' then
             inputName = paths.concat(self.dirInp,'x' .. scale,self.imgPaths[i]):gsub('%.%w+','.png')
-            input = image.load(inputName)
+            if self.split=='train' and (self.opt.dataset=='91' or self.opt.dataset=='291') then
+                if self.opt.netType=='VDSR' then
+                    input = self.imgInp[scale][i]:clone()
+                else 
+                    input = self.imgInp[i]:clone()
+                end
+            else
+                input = image.load(inputName)
+            end
             
             if self.split == 'train' then
                 local ps = self.opt.patchSize
@@ -155,10 +183,9 @@ function dataset:get(i)
         target:mul(255)
 
         if self.opt.nChannel == 1 then
-            input = util:rgb2y(input):float()
-            target = util:rgb2y(target):float()
+            input = util:rgb2y(input)
+            target = util:rgb2y(target)
         end
-
         return {
             input = input,
             target = target
@@ -206,11 +233,13 @@ local pca = {
 function dataset:augment()
     if self.split == 'train' then
         return transform.Compose{
+            --[[
             transform.ColorJitter({
                 brightness = 0.1,
                 contrast = 0.1,
                 saturation = 0.1
             }),
+            --]]
             --transform.Lighting(0.1, pca.eigval, pca.eigvec),
             transform.HorizontalFlip(0.5),
             transform.Rotation(1)

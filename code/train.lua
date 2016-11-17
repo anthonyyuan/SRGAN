@@ -39,7 +39,7 @@ function Trainer:train(epoch, dataloader)
     local timer = torch.Timer()
     local dataTimer = torch.Timer()
     local trainTime, dataTime = 0,0
-    local iter, avgLossG, avgLossD = 0,0,0
+    local iter, errG, errG_adv = 0,0,0
     local errD_fake, errD_real = 0,0
 
     self.model:training()
@@ -53,11 +53,13 @@ function Trainer:train(epoch, dataloader)
         -- Train generator network
         self.model:zeroGradParameters()
 
-        self.model:forward(self.input):float()
+        self.model:forward(self.input)
         self.err = self.criterion(self.model.output, self.target)
         self.model:backward(self.input, self.criterion.gradInput)
 
-        --self.gradParams:clamp(-self.opt.clip/self.opt.lr,self.opt.clip/self.opt.lr)
+        if self.opt.clip > 0 then
+            self.gradParams:clamp(-self.opt.clip/self.opt.lr,self.opt.clip/self.opt.lr)
+        end
         self.optimState.method(self.feval, self.params, self.optimState)
         --self.optimState.G.method(self.feval.G, self.params.G, self.optimState.G)
 --[[
@@ -73,9 +75,9 @@ function Trainer:train(epoch, dataloader)
         end
 --]]
 
-        avgLossG = avgLossG + self.err
+        errG = errG + self.err
         if self.opt.adv > 0 then
-            avgLossD = avgLossD + self.advLoss.output
+            errG_adv = errG_adv + self.advLoss.output
             errD_fake = errD_fake + self.advLoss.err_fake
             errD_real = errD_real + self.advLoss.err_real
         end
@@ -86,12 +88,12 @@ function Trainer:train(epoch, dataloader)
 
         iter = iter + 1
         if n % self.opt.printEvery == 0 then
-            print(('[%d/%d] Time: %.3f   Data: %.3f  lossG: %.6f  lossD: %.6f '
-                .. '(errD_fake: %.6f  errD_real: %.6f)')
-                :format(n,self.opt.testEvery,trainTime,dataTime,avgLossG/iter,avgLossD/iter,
+            print(('[%d/%d] Time: %.3f   Data: %.3f  errG: %.6f (adv: %.6f)  '
+                .. 'errD_fake: %.6f  errD_real: %.6f')
+                :format(n,self.opt.testEvery,trainTime,dataTime,errG/iter,errG_adv/iter,
                         errD_fake/iter, errD_real/iter))
             if n % self.opt.testEvery ~= 0 then
-                avgLossG, avgLossD = 0,0
+                errG, errG_adv = 0,0
                 errD_fake, errD_real = 0,0
                 trainTime, dataTime = 0,0
                 iter = 0
@@ -101,7 +103,7 @@ function Trainer:train(epoch, dataloader)
         if n % self.opt.testEvery == 0 then break end
     end
     
-    return avgLossG/iter, avgLossD/iter
+    return errG/iter, errG_adv/iter
 end
 
 function Trainer:test(epoch, dataloader)
@@ -156,7 +158,7 @@ function Trainer:test(epoch, dataloader)
                 test_img(scale)
             end
         else
-            test_img()   
+            test_img(self.opt.scale)
         end
         iter = iter + 1
     end
